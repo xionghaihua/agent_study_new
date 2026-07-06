@@ -409,7 +409,7 @@ def example_4():
 
 def main(example_number:int):
     print("="*60)
-    print("第4课:提示词和中间件")
+    print("第7课-SQL Agent实战")
     print("="*60)
     example={
         1:example_1,
