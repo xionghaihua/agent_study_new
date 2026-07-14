@@ -371,6 +371,7 @@ def example_6():
     - 生产环境配置
     按thread_id隔离不同会话，存的是对话过程，而不是用户画像，agent不会跨thread_id
     """
+    # 短期记忆：PostgresSaver
     from langgraph.checkpoint.postgres import PostgresSaver
     from psycopg_pool import ConnectionPool
     from psycopg.rows import dict_row
@@ -432,7 +433,7 @@ def example_6():
 
 def main(example_number:int):
     print("="*60)
-    print("第8课-记忆系统之短期记忆")
+    print("第9课-短期记忆")
     print("="*60)
     example={
         1:example_1,
