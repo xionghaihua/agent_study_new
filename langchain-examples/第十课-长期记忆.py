@@ -274,6 +274,85 @@ def example_3():
     )
     print(f"AI:{result2['messages'][-1].content}")
 
+
+def example_4():
+    """
+    目标：理解两种存储模式的区别
+    - profile：单用户单一档案
+    - collection 多条目集合
+    """
+    print("\n============示例4:profile vs collection 模式=============")
+    store=get_postgres_store()
+    @dataclass
+    class UserContext:
+        user_id: str
+    @tool
+    def set_user_preference(key:str,value:str,runtime:ToolRuntime[UserContext])->str:
+        """
+        设置用户偏好profile模式
+        每个用户只有一个配置
+        """
+        user_id = runtime.context.user_id
+        data = store.get(("prefs",),user_id)
+        prefs = data.value if data else {}
+        prefs[key] = value
+        store.put(("prefs",),user_id, prefs)
+        return f"已保存：{key} = {value}"
+    @tool
+    def add_bookmark(url:str,title: str,runtime:ToolRuntime[UserContext])->str:
+        """
+        添加书签collection模式
+        用户可以有多个书签
+        """
+        user_id = runtime.context.user_id
+        bookmarks = store.search(("bookmarks",user_id))
+        bookmark_id = len(bookmarks) + 1
+        store.put(("bookmarks",user_id),f"bm_{bookmark_id}",{"url":url,"title":title})
+        return f"已添加书签：{title} {url}"
+    @tool
+    def list_bookmarks(runtime:ToolRuntime[UserContext])->str:
+        """列出所有标签"""
+        user_id= runtime.context.user_id
+        bookmarks = store.search(("bookmarks",user_id))
+        if not bookmarks:
+            return "暂无标签"
+        output = "书签列表:\n"
+        for bm in bookmarks:
+            output += f"-{bm.value['title']}:{bm.value['url']}\n"
+        return output
+    model = init_chat_model(
+        base_url=os.getenv('ARK_BASE_URL'),
+        api_key=os.getenv('ARK_API_KEY'),
+        model_provider="openai",
+        model="Doubao-Seed-2.0-lite",
+        temperature=0
+    )
+    agent = create_agent(
+        model=model,
+        tools=[set_user_preference,add_bookmark,list_bookmarks],
+        system_prompt="你是一个个人助手，管理用户的偏好和书签",
+        context_schema=UserContext,
+        store=store,
+    )
+    print("\n====测试1:profile模式==========")
+    result1 = agent.invoke(
+        {"messages":[("user","把我的主题设置为暗色")]},
+        config={"configurable":{"thread_id":"profile_demo"},"callbacks":[langfuse_handler]},
+        context=UserContext(user_id="U001"),
+    )
+    print(f"AI:{result1['messages'][-1].content}")
+    print("\n======测试2:collection模式================")
+    result2 = agent.invoke(
+        {"messages":[("user","添加一个书签:github,网站：github.com")]},
+        config = {"configurable":{"thread_id":"profile_demo"},"callbacks":[langfuse_handler]},
+        context = UserContext(user_id="U001"),
+    )
+    print(f"AI:{result2['messages'][-1].content}")
+
+
+
+
+
 def main(example_number:int):
     print("="*60)
     print("第9课-长期记忆")
@@ -282,7 +361,7 @@ def main(example_number:int):
         1:example_1,
         2:example_2,
         3:example_3,
-        #4:example_4,
+        4:example_4,
         #5:example_5,
         #6:example_6
     }
@@ -291,4 +370,4 @@ def main(example_number:int):
     else:
         print(f"错误：实例编号{example_number}不存在")
 if __name__ == "__main__":
-    main(3)
+    main(4)
