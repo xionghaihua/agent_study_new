@@ -20,6 +20,7 @@ import operator
 from dotenv import load_dotenv
 import os
 
+
 load_dotenv()
 langfuse_handler = CallbackHandler()
 
@@ -194,22 +195,157 @@ def example_3():
 
 def example_4():
     """
-
+    目标：构建多步骤处理流水线
+    知识点：
+    - 节点串联
+    - 数据流转
+    - 状态累计
     :return:
     """
-    pass
+    print("\n=============示例4:多节点流水线============")
+    class PipelineState(TypedDict):
+        input_text:str
+        processed_text:str
+        summary:str
+    #节点1:预处理
+    def preprocess(state:PipelineState)->dict:
+        text = state["input_text"]
+        processed = text.strip().lower()
+        print(f"[节点1]预处理：'{processed}'")
+        return {"processed_text":processed}
+    #节点2:分析
+    def analyze(state:PipelineState)->dict:
+        text = state['processed_text']
+        word_count = len(text.split())
+        char_count = len(text)
+        analysis = f"词数：{word_count},字符数：{char_count}"
+        print(f"[节点2]分析完成：{analysis}")
+        return {"summary":analysis}
+
+    #节点3:生成报告
+    def generate_report(state:PipelineState)->dict:
+        report =  f"文件分析报告:\n"
+        report += f"原文:{state['input_text']}\n"
+        report +=f"处理后:{state['processed_text']}\n"
+        report +=f"统计：:{state['summary']}\n"
+        print(f"[节点3]报告生成完成")
+        return {"summary":report}
+
+    builder = StateGraph(state_schema=PipelineState)
+    builder.add_node("preprocess", preprocess)
+    builder.add_node("analyze", analyze)
+    builder.add_node("report", generate_report)
+    builder.add_edge(START, "preprocess")
+    builder.add_edge("preprocess", "analyze")
+    builder.add_edge("analyze", "report")
+    builder.add_edge("report", END)
+    graph = builder.compile()
+    print("\n====测试流水线=====")
+    result  = graph.invoke(
+        {"input_text":"hello world! this is a langgraph Tutorial","processed_text":"","summary":""},
+        config={"callbacks":[langfuse_handler]},
+    )
+    print(f"\n{result['summary']}")
+
 
 
 
 
 
 def example_5():
-    pass
+    """
+    示例5:客服路由系统
+    目标：创建完整的客服路由图
+    知识点：
+    - 复杂图结构
+    - 多条件路由
+    - 节点组合
+    - 生产级实现
+    :return:
+    """
+    print("\n=======示例5:客服路由系统=========")
+    model = init_chat_model(
+        base_url=os.getenv('ARK_BASE_URL'),
+        api_key=os.getenv('ARK_API_KEY'),
+        model_provider="openai",
+        model="Doubao-Seed-2.0-lite",
+        temperature=0
+    )
+    class CustomState(MessagesState):
+        category:str
 
+    #分类节点
+    def classify_request(state:CustomState)->dict:
+        """分类用户请求"""
+        last_msg = state["messages"][-1].content.lower()
+        if "订单" in last_msg or "物流" in last_msg:
+            category = "order"
+        elif "退款" in last_msg or "退货" in last_msg:
+            category = "refund"
+        else:
+            category = "general"
+        print(f"[分类节点]类别：{category}")
+        return {"category":category}
+    #订单处理节点
+    def handle_order(state:CustomState)->dict:
+        """处理订单查询"""
+        response = AIMessage("您好，关于订单查询，请提供订单号，我将为您查询物流信息。")
+        print(f"[订单节点]处理订单查询")
+        return {"messages":[response]}
+    #退款处理节点
+    def handle_refund(state:CustomState)->dict:
+        """处理退款请求"""
+        response = AIMessage("您好，关于退款，请告知您的订单号和退款原因")
+        print(f"[退款节点]处理退款请求")
+        return {"messages":[response]}
+    #通用处理
+    def handle_general(state:CustomState)->dict:
+        """通用处理"""
+        print(f"[通用处理]调用LLM....")
+        response = model.invoke(state["messages"])
+        return {"messages":[response]}
+    #路由函数
+    def route_by_category(state:CustomState)->str:
+        return state["category"]
+    #构建图
+    builder = StateGraph(CustomState)
+    builder.add_node("classify", classify_request)
+    builder.add_node("order", handle_order)
+    builder.add_node("refund", handle_refund)
+    builder.add_node("general", handle_general)
+    builder.add_edge(START, "classify")
+    builder.add_conditional_edges(
+        "classify",
+        route_by_category,
+        {"order":"order","refund":"refund","general":"general"}
+    )
+    builder.add_edge("order",END)
+    builder.add_edge("refund",END)
+    builder.add_edge("general",END)
 
+    graph = builder.compile()
+
+    #测试
+    print("\n=========订单查询=========")
+    result1 = graph.invoke(
+        {"messages":[HumanMessage("我的订单到哪了？")]},
+        config = {"callbacks":[langfuse_handler]},
+    )
+    print(f"AI:{result1['messages'][-1].content}")
+    print("\n=======退款请求============")
+    result2 = graph.invoke(
+        {"messages":[HumanMessage("我要申请退款")]},
+        config = {"callbacks":[langfuse_handler]},
+    )
+    print(f"AI:{result2['messages'][-1].content}")
+    result3 = graph.invoke(
+        {"messages":[HumanMessage("你们的产品有哪些优势？")]},
+        config = {"callbacks":[langfuse_handler]},
+    )
+    print(f"AI:{result3['messages'][-1].content}")
 def main(example_number:int):
     print("="*60)
-    print("第11课：")
+    print("第11课：langgraph深度掌握---图API基础")
     print("="*60)
     example={
         1:example_1,
@@ -224,4 +360,13 @@ def main(example_number:int):
     else:
         print(f"错误：实例编号{example_number}不存在")
 if __name__ == "__main__":
-    main(3)
+    main(5)
+
+
+"""
+状态流转：
+读取
+处理
+返回
+
+"""
