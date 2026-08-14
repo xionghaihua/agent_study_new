@@ -338,6 +338,213 @@ def example_4():
     else:
         print("未命中中断，直接完成")
         print(f"结果：:{result2['final_decision']}")
+def example_5():
+    """
+    示例5: update_state
+    目标： 掌握使用update_state修改状态并恢复执行
+    知识点：
+    - update_state 修改checkpoint状态
+    - invoke(None,config)从暂停点继续
+    - 状态检查与修正
+    :return:
+    """
+
+    print("\n=============示例5:update_state恢复执行===========")
+    class EditState(TypedDict):
+        draft: str
+        review_comment:str
+        final_content: str
+    def write_draft(state:EditState)->dict:
+        """编写初稿"""
+        print("[编写]正在编写内容......")
+        return {"draft": "这是一份初稿，需要审核修改"}
+
+    def review_draft(state:EditState)->dict:
+        """审核初稿"""
+        comment = state.get("review_comment","")
+        if comment:
+            print(f"[审核]审核意见:{comment}")
+            return {"final_content":f"审核后的内容:{state['draft']} (根据意见修改)"}
+        else:
+            print("[审核]无审核意见，等待人工修改")
+            return {"final_content":state["draft"]}
+    def finalize(state:EditState)->dict:
+        """定稿"""
+        print(f"[定稿]最终内容:{state['final_content']}")
+        return {"final_content":state["final_content"]}
+
+    #构建图
+    builder = StateGraph(EditState)
+    builder.add_node("write_draft", write_draft)
+    builder.add_node("review_draft", review_draft)
+    builder.add_node("finalize", finalize)
+    builder.add_edge(START,"write_draft")
+    builder.add_edge("write_draft","review_draft")
+    builder.add_edge("review_draft","finalize")
+    builder.add_edge("finalize",END)
+
+    checkpointer = InMemorySaver()
+    graph = builder.compile(checkpointer=checkpointer,interrupt_before=["review_draft"])
+
+    """
+    interrupt_before: 在这个节点review_draft会暂停
+    """
+    config1 = {"configurable":{"thread_id":"review_pass_001"},"callbacks":[langfuse_handler]}
+    print("\n=====步骤1：编写初稿=======")
+    result = graph.invoke(
+        {"draft":"","review_comment":"","final_decision":""},
+        config=config1
+    )
+    print(f"初稿内容:{result['draft']}")
+
+    #等待用户审核决定
+    print("\n=====步骤2:人工审核======")
+    print(f"当前初稿:{result['draft']}")
+    choice = input("是否审核通过(y/n):").strip().lower()
+    if choice == "y":
+        print("审核通过")
+        comment=input("请输入修改意见(直接回车跳过):").strip().lower()
+        if comment:
+            print(f"修改意见:{comment}")
+            #修改审核意见和初稿
+            graph.update_state(
+                config1,
+                {
+                    "review_comment":comment,
+                    "draft":f"{result['draft']} (根据审核意见修改)",
+                },
+            )
+        else:
+            print("无修改意见，直接通过")
+            graph.update_state(
+                config1,
+                {
+                    "review_comment":"审核通过，无需修改"
+                },
+            )
+    else:
+        print("审核不通过，需要重写")
+        comment = input("请输入打回原因：").strip().lower()
+        graph.update_state(
+            config1,
+            {
+                "review_comment": f"打回：{comment or '内容不符合要求'}",
+                "draft": "初稿已打回，需要重新编写"
+            },
+        )
+    #继续执行
+    print("\n=====步骤3:继续执行=========")
+    result = graph.invoke(
+        None,
+        config=config1
+    )
+    print(f"最终内容:{result['final_content']}")
+
+    """
+    update_state: 修改状态
+    update_state + invoke(None,config)
+    - 适用interrupt_before
+    """
+    print("\n======状态历史=======")
+    states = list(graph.get_state_history(config1))
+    states.reverse()
+    for i,state in enumerate(states):
+        draft = state.values.get("draft","")
+        final = state.values.get("final_content","")
+        node = state.metadata.get("step","?")
+        print(f"checkpoint {i} (step={node}):")
+        print(f"draft:{draft or '(空)'}")
+        print(f"final_content:{final or '(空)'}")
+
+
+
+def example_6():
+    """
+    示例6: 时间旅行-状态回滚
+    目标： 掌握使用update_state回滚到历史checkpoint
+    知识点:
+    - get_state_history 查看历史状态
+    - 获取指定checkpoint的ID
+    - update_state指定checkpoint回滚
+    - 从回滚点重新执行
+    :return:
+    """
+    class TravelState(TypedDict):
+        step: int
+        data:str
+        result:str
+    def step_a(state:TravelState)->dict:
+        """步骤A"""
+        print("[步骤A]处理数据....")
+        return {"step":1,"data":"步骤A的结果"}
+    def step_b(state:TravelState)->dict:
+        """步骤B"""
+        print("[步骤B]继续处理....")
+        return {"step":2,"data":f"{state['data']} -> 步骤B的结果"}
+    def step_c(state:TravelState)->dict:
+        """步骤c"""
+        print("[步骤c]最终处理....")
+        return {"step":3,"data":f"{state['data']} -> 步骤C的结果"}
+
+    #构建图
+    builder = StateGraph(TravelState)
+    builder.add_node("step_a", step_a)
+    builder.add_node("step_b", step_b)
+    builder.add_node("step_c", step_c)
+    builder.add_edge(START,"step_a")
+    builder.add_edge("step_a","step_b")
+    builder.add_edge("step_b","step_c")
+    builder.add_edge("step_c",END)
+    checkpointer = InMemorySaver()
+    graph = builder.compile(checkpointer=checkpointer)
+
+    config = {"configurable":{"thread_id":"review_pass_001"},"callbacks":[langfuse_handler]}
+    print("\n===首次执行:完整运行=======")
+    result = graph.invoke(
+        {"step":0,"data":"初始数据","result":""},
+        config=config
+    )
+    print(f"最终结果:{result['result']}")
+
+    #查看状态历史
+    print("\n=======状态历史==========")
+    states = list(graph.get_state_history(config))
+    print(f"最终状态历史:{states}")
+
+    #按时间正序
+    states.reverse()
+    for i,state in enumerate(states):
+        step = state.values.get("step","")
+        data = state.values.get("data","")
+        result_val = state.values.get("result","")
+        print(f"checkpoint {i}: step={step},data={data if data else '{空}'}")
+        if result_val:
+            print(f"result={result_val}")
+    #选择要回滚的checkpoint（回滚到步骤A）
+    checkpoint_to_rollback = states[2]
+    print(f"\n======回滚到checkpoint 2 (步骤A完成之后)=========")
+    print(f"回滚时状态:step={checkpoint_to_rollback.values['step']},data={checkpoint_to_rollback.values['data']}")
+
+    #回滚并修改数据
+    print("\n====回滚到checkpoint 2并修改数据========")
+    graph.update_state(
+        config,
+        {
+            "step": checkpoint_to_rollback.values['step'],
+            "data": "修改后的数据"
+        },
+        as_node="step_a" #指定回滚的节点，从该节点之后继续执行
+    )
+
+    #查看当前状态位置
+    current_state = graph.get_state(config)
+    print(f"修改数据后当前状态:step={current_state.values.get('step')},data={current_state.values.get('data')}")
+    print(f"下一个要执行的节点:{current_state.next}")
+
+    #从回滚点重新执行
+    print("\n======从回滚点重新执行=======")
+    result2 = graph.invoke(None,config=config)
+    print(f"重新执行结果:{result2}")
 def main(example_number:int):
     print("="*60)
     print("第12课：langgraph子图等高级")
@@ -347,12 +554,12 @@ def main(example_number:int):
         2:example_2,
         3:example_3,
         4:example_4,
-        #5:example_5,
-        #6:example_6
+        5:example_5,
+        6:example_6
     }
     if example_number in example:
         example[example_number]()
     else:
         print(f"错误：实例编号{example_number}不存在")
 if __name__ == "__main__":
-    main(4)
+    main(6)
