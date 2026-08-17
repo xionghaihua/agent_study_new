@@ -20,6 +20,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_milvus import Milvus
 
 #导入langgraph相关依赖
 from langgraph.graph import StateGraph,START,END
@@ -212,8 +213,13 @@ text_splitter = RecursiveCharacterTextSplitter(
 print("✅ 所有组件初始化成功！")
 
 print("\n======步骤2:构建私有知识库==================")
-vector_db = None
-document_chunks = []
+# 全局变量
+vector_db: Optional[Milvus] = None
+document_chunks: list[str] = []
+
+
+from langchain_community.embeddings import FakeEmbeddings
+from langchain_milvus import Milvus
 
 def build_knowledge_base(pdf_path:str):
     """
@@ -222,6 +228,7 @@ def build_knowledge_base(pdf_path:str):
     :return:  构建好的FAISS向量库对象
     """
     """构建私有知识库"""
+
     global vector_db, document_chunks
     if not os.path.exists(pdf_path):
         print(f"⚠️ 警告：文件 {pdf_path} 不存在，使用模拟数据")
@@ -232,7 +239,18 @@ def build_knowledge_base(pdf_path:str):
             "通义千问是阿里巴巴推出的大型语言模型。",
             "向量数据库用于存储和检索高维向量数据。"
         ]
-        return
+        # 使用模拟嵌入写入Milvus
+        from langchain_community.embeddings import FakeEmbeddings
+        fake_embeddings = FakeEmbeddings(size=768)
+        vector_db = Milvus.from_texts(
+            texts=document_chunks,
+            embedding=fake_embeddings,
+            connection_args={"uri": "http://172.16.181.128:19530"},
+            collection_name="rag_agent",
+            drop_old=False,
+            auto_id=False,
+        )
+        return vector_db
 
     try:
         #加载文档
@@ -243,34 +261,57 @@ def build_knowledge_base(pdf_path:str):
         splits = text_splitter.split_documents(documents)
         print(f"✅ 文本分割完成，共得到 {len(splits)} 个文本块")
         document_chunks = [doc.page_content for doc in splits]
+
         import numpy as np
-        from langchain_community.vectorstores import FAISS
         from langchain_community.embeddings import FakeEmbeddings
         if USE_MOCK or not api_key:
             print("🔧 使用模拟嵌入构建向量库")
             # 使用随机向量
             fake_embeddings = FakeEmbeddings(size=768)
-            vector_db = FAISS.from_texts(document_chunks, fake_embeddings)
+            embed_model = fake_embeddings
         else:
-            print("🔧 使用通义千问嵌入构建向量库")
-            vector_db = FAISS.from_texts(document_chunks, embeddings)
-        vector_db.save_local("faiss_rag_index")
-        print(f"✅ 私有知识库构建完成")
-        #return vector_db
+            print("🔧 使用通义千问嵌入构建Milvus向量库")
+            embed_model = embeddings
+        #3.写入Milvus
+
+        vector_db = Milvus.from_texts(
+            texts=document_chunks,
+            embedding=embed_model,
+            connection_args={"uri": "http://172.16.181.128:19530"},
+            collection_name="rag_agent",
+            drop_old=False,  # 生产环境False，不删除历史数据
+            auto_id=False,  # 关闭自动ID，如需自定义主键后续自行处理
+        )
+        print(f"✅ 私有知识库构建完成，数据已存入Milvus collection: rag_agent")
+        return vector_db
     except Exception as e:
         print(f"⚠️ 构建知识库失败: {e}")
         print("🔧 使用模拟数据继续...")
-        document_chunks = ["文档处理失败，使用模拟数据。", "错误信息：" + str(e)[:100]]
+        document_chunks = [
+            "文档处理失败，使用模拟数据。",
+            "错误信息：" + str(e)[:100]
+        ]
+        from langchain_community.embeddings import FakeEmbeddings
+        fake_embeddings = FakeEmbeddings(size=768)
+        vector_db = Milvus.from_texts(
+            texts=document_chunks,
+            embedding=fake_embeddings,
+            connection_args={"uri": "http://172.16.181.128:19530"},
+            collection_name="rag_agent",
+            drop_old=False,
+            auto_id=False,
+        )
+        return vector_db
 
 pdf_path = "./renshi.pdf"
 build_knowledge_base(pdf_path)
 
-def simple_retrieve(query:str,k:int=3) ->List[str]:
-    """简单检索函数"""
-    if vector_db is not None:
-        try:
-            docs = docs = vector_db.similarity_search(query, k=k)
-
+# def simple_retrieve(query:str,k:int=3) ->List[str]:
+#     """简单检索函数"""
+#     if vector_db is not None:
+#         try:
+#             docs = docs = vector_db.similarity_search(query, k=k)
+#
 
 
 
