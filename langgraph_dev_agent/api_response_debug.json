@@ -1,0 +1,31 @@
+{
+  "id": "chatcmpl-c038589a-19bb-9d96-a5ec-fc637287313d",
+  "object": "chat.completion",
+  "created": 1787327201,
+  "model": "qwen3.8-max",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "reasoning_content": "用户要求根据提供的文本生成简洁、准确、全面的摘要，长度控制在300字以内，保留核心观点和关键信息。需要直接给出中文摘要。文本核心：LangGraph 是 LangChain 生态中用于构建有状态、可循环工作流的框架；基于状态机思想，通过节点、边和状态对象管理数据流转；相比线性脚本更具可扩展性和可观测性；适用于多轮对话、文档分析、工具调用链等复杂 LLM 流程；核心组件包括 StateGraph、State、Node、Edge；可与 LangChain 生态工具无缝集成，降低开发门槛。需要压缩成300字以内。无需提及工具。",
+        "content": "LangGraph 是 LangChain 生态中用于构建有状态、可循环工作流的框架，基于状态机思想，通过节点、边和状态对象管理数据流转。相比传统线性脚本，它具有更强的可扩展性和可观测性，适合多轮对话、文档分析、工具调用链等复杂 LLM 应用场景。其核心组件包括 StateGraph、State、Node 和 Edge，可组成灵活的工作流系统。同时，LangGraph 能与提示词模板、向量数据库、工具调用等 LangChain 生态工具无缝集成，降低复杂 LLM 应用的开发门槛。"
+      },
+      "finish_reason": "stop",
+      "logprobs": null
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 252,
+    "total_tokens": 516,
+    "completion_tokens": 264,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "text_tokens": 252
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 138,
+      "text_tokens": 264
+    }
+  }
+}

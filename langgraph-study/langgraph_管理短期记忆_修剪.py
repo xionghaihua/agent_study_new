@@ -12,6 +12,8 @@ llm = init_chat_model(
     model="openai:qwen3.7-plus",
     temperature=0
 )
+
+#不常用
 from langchain_core.messages.utils import trim_messages,count_tokens_approximately
 from langchain_core.messages import HumanMessage
 
@@ -23,21 +25,9 @@ def call_llm(state:MessagesState):
         token_counter = count_tokens_approximately,
         max_tokens = 100,
         start_on = "human",
-        end_on = ("ai","tools"),
+        end_on = ("ai","tools","human"),
         allow_partial=True,  # 允许截断对话片段
     )
-    # 兜底：确保最后一条是用户消息
-    while messages and not isinstance(messages[-1], HumanMessage):
-        messages.pop()
-
-    # 兜底：如果全部删空，至少保留最新一条用户消息
-    if not messages:
-        # 反向遍历找到最后一条human消息
-        for msg in reversed(state["messages"]):
-            if isinstance(msg, HumanMessage):
-                messages = [msg]
-                break
-
     print(f"修剪后的消息:{messages}")
     response = llm.invoke(messages)
     return {"messages":response}
